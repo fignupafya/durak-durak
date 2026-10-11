@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Durak Durak — En kısa rota</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --card: #ffffff;
+    --ink: #1d1f23;
+    --muted: #6b7078;
+    --line: #e3e1dc;
+    --accent: #0b6e4f;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+    --warn-bg: #fff4d6;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  #panel {
+    width: 380px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+  }
+  #map { flex: 1; min-width: 0; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button {
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  button:hover { border-color: #c9c6bf; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+    padding: 12px;
+  }
+  input[type="text"], select, textarea {
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 8px 10px;
+    width: 100%;
+    min-width: 0;
+  }
+  input:focus, select:focus, textarea:focus, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  #searchForm { display: flex; gap: 6px; }
+  #searchForm button { flex: none; }
+  #results { list-style: none; margin: -6px 0 0; padding: 0; }
+  #results:empty { display: none; }
+  #results li {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-top: none;
+    padding: 8px 10px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #results li:first-child { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+  #results li:last-child { border-radius: 0 0 8px 8px; }
+  #results li:hover { background: #eef6f2; }
+
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .opts label { font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
+  .opts .wide { grid-column: 1 / -1; }
+
+  #stops { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  #stops li {
+    display: grid;
+    grid-template-columns: 26px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 6px 6px 8px;
+  }
+  #stops .name {
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+    width: 100%;
+    text-overflow: ellipsis;
+  }
+  #stops .leg { font-size: 12px; color: var(--muted); }
+  #stops .acts { display: flex; gap: 2px; }
+  #stops .acts button {
+    border: none;
+    background: transparent;
+    padding: 4px 6px;
+    color: var(--muted);
+    border-radius: 6px;
+  }
+  #stops .acts button:hover { background: var(--bg); color: var(--ink); }
+  #stops .acts .del:hover { color: var(--danger); }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 18px 8px; border: 1px dashed var(--line); border-radius: 10px; }
+
+  .badge, .pin {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--ink); color: #fff;
+    font-size: 12px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge.start, .pin.start { background: var(--accent); }
+  .badge.end, .pin.end { background: var(--danger); }
+  .pin { border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); width: 30px; height: 30px; }
+
+  #status { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  #status.warn { background: var(--warn-bg); color: #5c4400; padding: 8px 10px; border-radius: 8px; }
+  #summary:empty { display: none; }
+  #summary {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    display: grid;
+    gap: 8px;
+  }
+  #summary .total { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  #summary .sub { color: var(--muted); font-size: 13px; }
+  #summary a {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  dialog { border: none; border-radius: 12px; padding: 16px; width: min(520px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog h2 { margin: 0 0 4px; font-size: 17px; }
+  dialog p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  dialog textarea { height: 220px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  dialog .row { margin-top: 10px; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column-reverse; }
+    #panel { width: 100%; flex: 1; border-right: none; border-top: 1px solid var(--line); }
+    #map { flex: none; height: 44vh; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="panel">
+  <header>
+    <h1>Durak Durak</h1>
+    <p>Durakları ekle, hepsinden geçen en kısa sırayı bulsun.</p>
+  </header>
+
+  <form id="searchForm">
+    <input type="text" id="q" placeholder="Adres, yer adı veya 41.01, 28.97" autocomplete="off">
+    <button type="submit">Ara</button>
+  </form>
+  <ul id="results"></ul>
+
+  <div class="row">
+    <button id="bulkBtn" type="button">Toplu ekle</button>
+    <button id="locBtn" type="button">Konumum</button>
+    <button id="clearBtn" type="button">Temizle</button>
+  </div>
+
+  <div class="opts">
+    <label class="wide">Rota nerede bitsin?
+      <select id="mode">
+        <option value="open">Fark etmez (en kısası)</option>
+        <option value="round">Başlangıca geri dön</option>
+        <option value="end">Listedeki son durakta bitir</option>
+      </select>
+    </label>
+    <label>Araç
+      <select id="profile">
+        <option value="car">Araba</option>
+        <option value="foot">Yürüyerek</option>
+        <option value="bike">Bisiklet</option>
+      </select>
+    </label>
+    <label>Neye göre en kısa?
+      <select id="metric">
+        <option value="distance">Mesafe (km)</option>
+        <option value="duration">Süre (dk)</option>
+      </select>
+    </label>
+  </div>
+
+  <ol id="stops"></ol>
+
+  <button id="go" class="primary" type="button">En kısa rotayı bul</button>
+  <div id="status"></div>
+  <div id="summary"></div>
+</aside>
+
+<div id="map"></div>
+
+<dialog id="bulk">
+  <h2>Toplu ekle</h2>
+  <p>Her satıra bir durak: adres, yer adı, <code>enlem, boylam</code> ya da Google Maps'in uzun linki.</p>
+  <textarea id="bulkText" placeholder="Kadıköy İskelesi, İstanbul&#10;41.0256, 28.9741&#10;Galata Kulesi"></textarea>
+  <div class="row">
+    <button id="bulkCancel" type="button">Vazgeç</button>
+    <button id="bulkAdd" class="primary" type="button">Ekle</button>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+'use strict';
+
+const STORE_KEY = 'durak-durak-v1';
+const EXACT_LIMIT = 19;          // bu sayıya kadar kesin çözüm (Held-Karp), üstü sezgisel
+const UNREACHABLE = 1e9;
+const GMAPS_POINTS_PER_LINK = 11; // başlangıç + 9 ara durak + bitiş
+
+const PROFILES = {
+  car:  { servers: ['https://routing.openstreetmap.de/routed-car', 'https://router.project-osrm.org'], gmaps: 'driving' },
+  foot: { servers: ['https://routing.openstreetmap.de/routed-foot'], gmaps: 'walking' },
+  bike: { servers: ['https://routing.openstreetmap.de/routed-bike'], gmaps: 'bicycling' },
+};
+
+const $ = id => document.getElementById(id);
+const el = {
+  q: $('q'), results: $('results'), stops: $('stops'), status: $('status'), summary: $('summary'),
+  go: $('go'), mode: $('mode'), profile: $('profile'), metric: $('metric'),
+  bulk: $('bulk'), bulkText: $('bulkText'),
+};
+
+let stops = [];   // {id, name, lat, lng}
+let route = null; // {distance, duration, legs:[{distance,duration}], line:[[lat,lng]], approx}
+let nextId = 1;
+let busy = false;
+
+// ---------- harita ----------
+
+const map = L.map('map', { zoomControl: true }).setView([39.0, 35.2], 6);
+const esriTiles = () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Karolar &copy; Esri',
+});
+// OSM, Referer göndermeyen sayfaları "Access blocked" görseliyle reddediyor (hata olayı da tetiklenmiyor).
+// Dosyadan (file://) açılınca Referer olmadığı için doğrudan Esri kullan.
+if (!/^https?:$/.test(location.protocol)) {
+  esriTiles().addTo(map);
+} else {
+  const osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları',
+  }).addTo(map);
+  osmTiles.once('tileerror', () => {
+    map.removeLayer(osmTiles);
+    esriTiles().addTo(map);
+  });
+}
+
+const markerLayer = L.layerGroup().addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
+
+map.on('click', e => {
+  if (busy) return;
+  const stop = addStop({ name: 'İşaretli nokta', lat: e.latlng.lat, lng: e.latlng.lng });
+  reverseGeocode(stop);
+});
+
+// ---------- yardımcılar ----------
+
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmtKm = m => (m / 1000).toLocaleString('tr-TR', { maximumFractionDigits: m < 10000 ? 1 : 0 }) + ' km';
+function fmtDur(sec) {
+  const min = Math.round(sec / 60);
+  if (min < 60) return min + ' dk';
+  return Math.floor(min / 60) + ' sa ' + (min % 60) + ' dk';
+}
+
+function setStatus(text, warn = false) {
+  el.status.textContent = text;
+  el.status.className = warn ? 'warn' : '';
+}
+
+function setBusy(on) {
+  busy = on;
+  el.go.disabled = on;
+  el.go.textContent = on ? 'Hesaplanıyor…' : 'En kısa rotayı bul';
+}
+
+async function fetchJson(url, timeoutMs = 25000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function haversine(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// ---------- kayıt ----------
+
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      stops, mode: el.mode.value, profile: el.profile.value, metric: el.metric.value,
+    }));
+  } catch { /* gizli sekme vb. — kaydetmeden devam */ }
+}
+
+function load() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (!data) return;
+    stops = (data.stops || []).filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+    stops.forEach(s => { s.id = nextId++; });
+    if (data.mode) el.mode.value = data.mode;
+    if (data.profile) el.profile.value = data.profile;
+    if (data.metric) el.metric.value = data.metric;
+  } catch { /* bozuk kayıt — boş başla */ }
+}
+
+// ---------- duraklar ----------
+
+function addStop({ name, lat, lng }, atStart = false) {
+  const stop = { id: nextId++, name, lat, lng };
+  if (atStart) stops.unshift(stop); else stops.push(stop);
+  changed();
+  return stop;
+}
+
+function changed() {
+  route = null;
+  el.summary.innerHTML = '';
+  setStatus('');
+  save();
+  render();
+}
+
+function render() {
+  const fixedEnd = el.mode.value === 'end';
+  const last = stops.length - 1;
+
+  if (!stops.length) {
+    el.stops.innerHTML = '<li class="empty" style="display:block">Henüz durak yok. Yukarıdan ara, toplu yapıştır ya da haritaya tıkla.</li>';
+  } else {
+    el.stops.innerHTML = stops.map((s, i) => {
+      const cls = i === 0 ? 'start' : (fixedEnd && i === last && last > 0 ? 'end' : '');
+      const leg = route && route.legs[i]
+        ? `<div class="leg">↓ ${fmtKm(route.legs[i].distance)} · ${fmtDur(route.legs[i].duration)}${i === last ? ' (başlangıca dönüş)' : ''}</div>`
+        : '';
+      return `<li data-id="${s.id}">
+        <span class="badge ${cls}">${i + 1}</span>
+        <div><input class="name" type="text" value="${esc(s.name)}" aria-label="Durak adı">${leg}</div>
+        <div class="acts">
+          ${i > 0 ? '<button data-act="start" title="Başlangıç yap">⤒</button>' : ''}
+          ${fixedEnd && i < last ? '<button data-act="end" title="Bitiş yap">⤓</button>' : ''}
+          <button data-act="del" class="del" title="Sil">✕</button>
+        </div>
+      </li>`;
+    }).join('');
+  }
+
+  markerLayer.clearLayers();
+  stops.forEach((s, i) => {
+    const cls = i === 0 ? 'start' : (fixedEnd && i === last && last > 0 ? 'end' : '');
+    const marker = L.marker([s.lat, s.lng], {
+      draggable: true,
+      title: s.name,
+      icon: L.divIcon({ className: '', html: `<div class="pin ${cls}">${i + 1}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
+    }).addTo(markerLayer);
+    marker.bindTooltip(`${i + 1}. ${esc(s.name)}`);
+    marker.on('dragend', () => {
+      const p = marker.getLatLng();
+      s.lat = p.lat; s.lng = p.lng;
+      changed();
+    });
+  });
+
+  routeLayer.clearLayers();
+  if (route) {
+    L.polyline(route.line, { color: '#ffffff', weight: 8, opacity: 0.9 }).addTo(routeLayer);
+    L.polyline(route.line, { color: '#0b6e4f', weight: 4, opacity: 0.95, dashArray: route.approx ? '6 8' : null }).addTo(routeLayer);
+  }
+}
+
+function fitToStops() {
+  if (!stops.length) return;
+  const pts = route ? route.line : stops.map(s => [s.lat, s.lng]);
+  map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 16 });
+}
+
+el.stops.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn || busy) return;
+  const id = Number(btn.closest('li').dataset.id);
+  const i = stops.findIndex(s => s.id === id);
+  if (i < 0) return;
+  const [stop] = stops.splice(i, 1);
+  if (btn.dataset.act === 'start') stops.unshift(stop);
+  else if (btn.dataset.act === 'end') stops.push(stop);
+  changed();
+});
+
+el.stops.addEventListener('change', e => {
+  if (!e.target.classList.contains('name')) return;
+  const id = Number(e.target.closest('li').dataset.id);
+  const stop = stops.find(s => s.id === id);
+  if (stop) { stop.name = e.target.value.trim() || 'Durak'; save(); render(); }
+});
+
+// ---------- konum çözme ----------
+
+// "41.01, 28.97" ya da Google Maps uzun linki → {lat, lng, name?}
+function parseCoords(text) {
+  const t = text.trim();
+  let m;
+  if (/^https?:\/\//i.test(t)) {
+    m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+      || t.match(/[?&](?:q|query|ll|destination|daddr)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/i)
+      || t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (!m) return null;
+    const place = t.match(/\/place\/([^/@]+)/);
+    let name = null;
+    if (place) { try { name = decodeURIComponent(place[1].replace(/\+/g, ' ')); } catch { /* adı atla */ } }
+    return valid(+m[1], +m[2], name);
+  }
+  // "41.01, 28.97" ya da virgüllü ondalıkla "41,01 28,97"
+  m = t.match(/^(-?\d{1,2}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)$/)
+    || t.match(/^(-?\d{1,2},\d+)\s*[;\s]\s*(-?\d{1,3},\d+)$/);
+  if (!m) return null;
+  return valid(parseFloat(m[1].replace(',', '.')), parseFloat(m[2].replace(',', '.')), null);
+
+  function valid(lat, lng, name) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return { lat, lng, name };
+  }
+}
+
+const isShortLink = t => /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl)\//i.test(t.trim());
+
+async function geocode(query, limit = 6) {
+  const b = map.getBounds();
+  const params = new URLSearchParams({
+    format: 'jsonv2', limit: String(limit), 'accept-language': 'tr', q: query,
+    viewbox: [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].join(','),
+  });
+  const data = await fetchJson('https://nominatim.openstreetmap.org/search?' + params);
+  return data.map(r => ({
+    lat: +r.lat, lng: +r.lon,
+    name: r.name || r.display_name.split(',').slice(0, 2).join(',').trim(),
+    full: r.display_name,
+  }));
+}
+
+async function reverseGeocode(stop) {
+  try {
+    const params = new URLSearchParams({ format: 'jsonv2', lat: stop.lat, lon: stop.lng, zoom: '17', 'accept-language': 'tr' });
+    const r = await fetchJson('https://nominatim.openstreetmap.org/reverse?' + params);
+    const name = r.name || (r.display_name || '').split(',').slice(0, 2).join(',').trim();
+    if (name && stops.includes(stop) && stop.name === 'İşaretli nokta') {
+      stop.name = name;
+      save();
+      render();
+    }
+  } catch { /* ad bulunamadı — varsayılan kalsın */ }
+}
+
+$('searchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = el.q.value.trim();
+  if (!text) return;
+  el.results.innerHTML = '';
+
+  if (isShortLink(text)) {
+    setStatus('Kısa Google linkleri (maps.app.goo.gl) çözülemiyor. Linki tarayıcıda açıp adres çubuğundaki uzun hali ya da adresi yapıştır.', true);
+    return;
+  }
+  const direct = parseCoords(text);
+  if (direct) {
+    const stop = addStop({ name: direct.name || 'İşaretli nokta', lat: direct.lat, lng: direct.lng });
+    if (!direct.name) reverseGeocode(stop);
+    el.q.value = '';
+    map.setView([direct.lat, direct.lng], Math.max(map.getZoom(), 14));
+    return;
+  }
+
+  setStatus('Aranıyor…');
+  try {
+    const found = await geocode(text);
+    if (!found.length) { setStatus('Sonuç bulunamadı. Daha açık yazmayı dene (ilçe/şehir ekle).', true); return; }
+    setStatus('');
+    el.results.innerHTML = found.map((r, i) => `<li data-i="${i}">${esc(r.full)}</li>`).join('');
+    el.results.onclick = ev => {
+      const li = ev.target.closest('li');
+      if (!li) return;
+      const r = found[+li.dataset.i];
+      addStop(r);
+      el.results.innerHTML = '';
+      el.q.value = '';
+      el.q.focus();
+      map.setView([r.lat, r.lng], Math.max(map.getZoom(), 14));
+    };
+  } catch {
+    setStatus('Arama servisine ulaşılamadı. İnternet bağlantını kontrol et.', true);
+  }
+});
+
+// ---------- toplu ekleme ----------
+
+$('bulkBtn').onclick = () => { el.bulkText.value = ''; el.bulk.showModal(); };
+$('bulkCancel').onclick = () => el.bulk.close();
+$('bulkAdd').onclick = async () => {
+  const lines = el.bulkText.value.split('\n').map(l => l.trim()).filter(Boolean);
+  el.bulk.close();
+  if (!lines.length) return;
+  const failed = [];
+  let lookups = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const direct = parseCoords(line);
+    if (direct) {
+      const stop = addStop({ name: direct.name || 'İşaretli nokta', lat: direct.lat, lng: direct.lng });
+      if (!direct.name) stop.name = `Nokta ${stops.length}`;
+      continue;
+    }
+    if (isShortLink(line)) { failed.push(line + ' (kısa link)'); continue; }
+    setStatus(`Adresler çözülüyor… ${i + 1}/${lines.length}`);
+    try {
+      if (lookups++) await sleep(1100); // Nominatim: saniyede en fazla 1 istek
+      const [hit] = await geocode(line, 1);
+      if (hit) addStop({ name: line.length <= 40 ? line : hit.name, lat: hit.lat, lng: hit.lng });
+      else failed.push(line);
+    } catch {
+      failed.push(line);
+    }
+  }
+  save();
+  render();
+  fitToStops();
+  if (failed.length) setStatus('Bulunamayanlar: ' + failed.join(' • '), true);
+  else setStatus(`${lines.length} durak eklendi.`);
+};
+
+$('locBtn').onclick = () => {
+  if (!navigator.geolocation) { setStatus('Bu tarayıcı konum paylaşımını desteklemiyor.', true); return; }
+  setStatus('Konum alınıyor…');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      addStop({ name: 'Konumum', lat: pos.coords.latitude, lng: pos.coords.longitude }, true);
+      map.setView([pos.coords.latitude, pos.coords.longitude], Math.max(map.getZoom(), 13));
+    },
+    () => setStatus('Konum alınamadı (izin verilmedi ya da kapalı).', true),
+    { enableHighAccuracy: true, timeout: 15000 },
+  );
+};
+
+$('clearBtn').onclick = () => {
+  if (!stops.length || !confirm('Tüm duraklar silinsin mi?')) return;
+  stops = [];
+  changed();
+};
+
+for (const sel of [el.mode, el.profile, el.metric]) sel.onchange = changed;
+
+// ---------- mesafe matrisi ve rota (OSRM) ----------
+
+const coordStr = list => list.map(s => s.lng.toFixed(6) + ',' + s.lat.toFixed(6)).join(';');
+
+async function osrm(path) {
+  let lastErr;
+  for (const base of PROFILES[el.profile.value].servers) {
+    try {
+      const data = await fetchJson(base + path);
+      if (data.code === 'Ok') return data;
+      lastErr = new Error(data.code);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+async function fetchMatrix() {
+  const data = await osrm(`/table/v1/driving/${coordStr(stops)}?annotations=duration,distance`);
+  const clean = m => m.map(row => row.map(v => (v == null ? UNREACHABLE : v)));
+  return { distance: clean(data.distances), duration: clean(data.durations) };
+}
+
+function straightMatrix() {
+  const speed = { car: 11, foot: 1.3, bike: 4.5 }[el.profile.value]; // m/sn, kaba tahmin
+  const distance = stops.map(a => stops.map(b => haversine(a, b) * 1.3));
+  return { distance, duration: distance.map(row => row.map(d => d / speed)) };
+}
+
+async function fetchRoute(seq) {
+  const data = await osrm(`/route/v1/driving/${coordStr(seq)}?overview=full&geometries=geojson&steps=false`);
+  const r = data.routes[0];
+  return {
+    distance: r.distance,
+    duration: r.duration,
+    legs: r.legs.map(l => ({ distance: l.distance, duration: l.duration })),
+    line: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+    approx: false,
+  };
+}
+
+// ---------- sıralama (gezgin satıcı problemi) ----------
+// Başlangıç her zaman 0. mode: 'round' başa döner, 'open' herhangi bir yerde biter, 'end' n-1'de biter.
+
+// Held-Karp: kesin en kısa sıra. O(2^n · n²).
+function solveExact(c, n, mode) {
+  const m = n - 1;
+  if (m <= 0) return [0];
+  const size = 1 << m;
+  const dp = new Float64Array(size * m).fill(Infinity);
+  const par = new Int8Array(size * m).fill(-1);
+  for (let j = 0; j < m; j++) dp[(1 << j) * m + j] = c[0][j + 1];
+
+  for (let mask = 1; mask < size; mask++) {
+    for (let j = 0; j < m; j++) {
+      if (!(mask & (1 << j))) continue;
+      const cur = dp[mask * m + j];
+      if (cur === Infinity) continue;
+      const row = c[j + 1];
+      for (let k = 0; k < m; k++) {
+        if (mask & (1 << k)) continue;
+        const idx = (mask | (1 << k)) * m + k;
+        const v = cur + row[k + 1];
+        if (v < dp[idx]) { dp[idx] = v; par[idx] = j; }
+      }
+    }
+  }
+
+  const full = size - 1;
+  let last = m - 1;
+  if (mode !== 'end') {
+    let best = Infinity;
+    for (let j = 0; j < m; j++) {
+      const v = dp[full * m + j] + (mode === 'round' ? c[j + 1][0] : 0);
+      if (v < best) { best = v; last = j; }
+    }
+  }
+
+  const order = [];
+  for (let mask = full, j = last; j !== -1;) {
+    order.push(j + 1);
+    const p = par[mask * m + j];
+    mask ^= 1 << j;
+    j = p;
+  }
+  order.push(0);
+  return order.reverse();
+}
+
+// Çok durak için: en yakın komşu + 2-opt/or-opt, zaman bütçesi içinde tekrarlı iyileştirme.
+function solveHeuristic(c, n, mode, budgetMs = 1500) {
+  const fixedEnd = mode === 'end' ? n - 1 : -1;
+  const cost = p => {
+    let sum = 0, prev = 0;
+    for (const x of p) { sum += c[prev][x]; prev = x; }
+    if (fixedEnd >= 0) sum += c[prev][fixedEnd];
+    else if (mode === 'round') sum += c[prev][0];
+    return sum;
+  };
+  const reverse = (p, i, j) => { while (i < j) { const t = p[i]; p[i++] = p[j]; p[j--] = t; } };
+
+  const improve = p => {
+    let best = cost(p), improved = true;
+    while (improved) {
+      improved = false;
+      for (let i = 0; i < p.length - 1; i++) {
+        for (let j = i + 1; j < p.length; j++) {
+          reverse(p, i, j);
+          const v = cost(p);
+          if (v < best - 1e-7) { best = v; improved = true; } else reverse(p, i, j);
+        }
+      }
+      for (let len = 1; len <= 3; len++) {
+        for (let i = 0; i + len <= p.length; i++) {
+          for (let pos = 0; pos <= p.length - len; pos++) {
+            if (pos === i) continue;
+            const seg = p.splice(i, len);
+            p.splice(pos, 0, ...seg);
+            const v = cost(p);
+            if (v < best - 1e-7) { best = v; improved = true; }
+            else { p.splice(pos, len); p.splice(i, 0, ...seg); }
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  // en yakın komşu ile başla
+  const left = new Set();
+  for (let i = 1; i < n; i++) if (i !== fixedEnd) left.add(i);
+  let cur = [], at = 0;
+  while (left.size) {
+    let pick = -1;
+    for (const x of left) if (pick < 0 || c[at][x] < c[at][pick]) pick = x;
+    cur.push(pick); left.delete(pick); at = pick;
+  }
+
+  let best = cur.slice(), bestCost = improve(best);
+  const deadline = performance.now() + budgetMs;
+  while (best.length > 3 && performance.now() < deadline) {
+    const trial = best.slice();
+    for (let k = 0; k < 3; k++) {
+      const i = Math.floor(Math.random() * trial.length), j = Math.floor(Math.random() * trial.length);
+      reverse(trial, Math.min(i, j), Math.max(i, j));
+    }
+    const v = improve(trial);
+    if (v < bestCost - 1e-7) { best = trial; bestCost = v; }
+  }
+
+  const order = [0, ...best];
+  if (fixedEnd >= 0) order.push(fixedEnd);
+  return order;
+}
+
+// ---------- ana akış ----------
+
+el.go.onclick = async () => {
+  if (busy) return;
+  if (stops.length < 2) { setStatus('En az 2 durak ekle.', true); return; }
+  setBusy(true);
+  el.results.innerHTML = '';
+  try {
+    setStatus('Duraklar arası yol mesafeleri alınıyor…');
+    let matrix, approx = false;
+    try {
+      matrix = await fetchMatrix();
+    } catch {
+      matrix = straightMatrix();
+      approx = true;
+    }
+
+    setStatus('En kısa sıra hesaplanıyor…');
+    await sleep(20); // durum yazısı ekrana gelsin
+    const n = stops.length, mode = el.mode.value;
+    const c = matrix[el.metric.value];
+    const exact = n <= EXACT_LIMIT;
+    const order = exact ? solveExact(c, n, mode) : solveHeuristic(c, n, mode);
+    stops = order.map(i => stops[i]);
+
+    const seq = mode === 'round' ? [...stops, stops[0]] : stops;
+    if (!approx) {
+      try {
+        setStatus('Rota çiziliyor…');
+        route = await fetchRoute(seq);
+      } catch {
+        approx = true;
+      }
+    }
+    if (approx) {
+      const legs = seq.slice(1).map((s, i) => {
+        const d = haversine(seq[i], s) * 1.3;
+        return { distance: d, duration: d / 11 };
+      });
+      route = {
+        legs,
+        distance: legs.reduce((a, l) => a + l.distance, 0),
+        duration: legs.reduce((a, l) => a + l.duration, 0),
+        line: seq.map(s => [s.lat, s.lng]),
+        approx: true,
+      };
+    }
+
+    save();
+    render();
+    renderSummary(seq, exact);
+    fitToStops();
+    if (approx) setStatus('Yol servisine ulaşılamadı; sıra kuş uçuşu mesafeye göre hesaplandı, rakamlar yaklaşık.', true);
+    else setStatus(exact ? 'Kesin en kısa sıra bulundu.' : `${n} durak için çok iyi bir sıra bulundu (kesin çözüm ${EXACT_LIMIT} durağa kadar).`);
+  } catch (err) {
+    console.error(err);
+    setStatus('Bir şeyler ters gitti: ' + err.message, true);
+  } finally {
+    setBusy(false);
+  }
+};
+
+function renderSummary(seq, exact) {
+  const links = [];
+  for (let i = 0; i < seq.length - 1; i += GMAPS_POINTS_PER_LINK - 1) {
+    const part = seq.slice(i, i + GMAPS_POINTS_PER_LINK);
+    const ll = s => s.lat.toFixed(6) + ',' + s.lng.toFixed(6);
+    const params = new URLSearchParams({
+      api: '1',
+      origin: ll(part[0]),
+      destination: ll(part[part.length - 1]),
+      travelmode: PROFILES[el.profile.value].gmaps,
+    });
+    if (part.length > 2) params.set('waypoints', part.slice(1, -1).map(ll).join('|'));
+    links.push({ url: 'https://www.google.com/maps/dir/?' + params, from: i + 1, to: i + part.length });
+  }
+  const single = links.length === 1;
+  el.summary.innerHTML = `
+    <div>
+      <div class="total">${route.approx ? '≈ ' : ''}${fmtKm(route.distance)}</div>
+      <div class="sub">${fmtDur(route.duration)} · ${stops.length} durak${el.mode.value === 'round' ? ' · başlangıca dönüşlü' : ''}</div>
+    </div>
+    ${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">Google Maps'te aç${single ? '' : ` (${l.from}–${l.to}. nokta)`}</a>`).join('')}
+    ${single ? '' : '<div class="sub">Google Maps tek seferde en fazla 9 ara durak aldığı için rota parçalara bölündü.</div>'}
+  `;
+}
+
+// ---------- başlat ----------
+
+load();
+render();
+fitToStops();
+</script>
+</body>
+</html>
